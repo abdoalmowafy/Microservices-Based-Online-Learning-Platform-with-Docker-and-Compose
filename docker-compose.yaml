@@ -1,0 +1,185 @@
+version: "3.9"
+
+services:
+
+  # Gateway
+  gateway:
+    build: ./gateway
+    ports:
+      - "4000:4000"
+    depends_on:
+      - user
+      - course
+      - lesson
+      - progress
+    environment:
+      - NODE_ENV=development
+
+  # Auth Service (REST + .NET + PostgreSQL)
+  auth:
+    build: ./services/auth
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=auth-db;Database=auth_db;Username=${AuthService__Database__Username};Password=${AuthService__Database__Password};Port=5432;
+      - JwtConfig__Issuer=${JwtConfig__Issuer}
+      - JwtConfig__Audience=${JwtConfig__Audience}
+      - JwtConfig__Key=${JwtConfig__Key}
+      - JwtConfig__AccessTokenValidityMins=${JwtConfig__AccessTokenValidityMins}
+      - JwtConfig__RefreshTokenValidityDays=${JwtConfig__RefreshTokenValidityDays}
+      - Email_Smtp__Host=${Email_Smtp__Host}
+      - Email_Smtp__From=${Email_Smtp__From}
+      - Email_Smtp__Port=${Email_Smtp__Port}
+      - Email_Smtp__Username=${Email_Smtp__Username}
+      - Email_Smtp__Password=${Email_Smtp__Password}
+    depends_on:
+      - auth-db
+    ports:
+      - "5000:80"
+
+  auth-db:
+    image: postgres:16
+    container_name: auth-db
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: ${AuthService__Database__Username}
+      POSTGRES_PASSWORD: ${AuthService__Database__Password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth_data:/var/lib/postgresql/data
+
+  # User Profile Service (GraphQL + PostgreSQL)
+  user:
+    build: ./services/user
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://${UserService__Database__Username}:${UserService__Database__Password}@user-db:5433/user_db
+      - JwtConfig__Key=${JwtConfig__Key}
+      - JwtConfig__Issuer=${JwtConfig__Issuer}
+      - JwtConfig__Audience=${JwtConfig__Audience}
+      - JwtConfig__AccessTokenValidityMins=${JwtConfig__AccessTokenValidityMins}
+      - JwtConfig__RefreshTokenValidityDays=${JwtConfig__RefreshTokenValidityDays}
+    depends_on:
+      - user-db
+
+  user-db:
+    image: postgres:16
+    container_name: user-db
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: ${UserService__Database__Username}
+      POSTGRES_PASSWORD: ${UserService__Database__Password}
+    ports:
+      - "5433:5432"
+    volumes:
+      - user_data:/var/lib/postgresql/data
+
+  # Course Service (GraphQL + MongoDB)
+  course:
+    build: ./services/course
+    environment:
+      - MONGO_URL=mongodb://course-db:27017/course_db
+    depends_on:
+      - course-db
+
+  course-db:
+    image: mongo:7
+    container_name: course-db
+    ports:
+      - "27017:27017"
+    volumes:
+      - course_data:/data/db
+
+  # Lesson Service (GraphQL + MongoDB)
+  lesson:
+    build: ./services/lesson
+    environment:
+      - MONGO_URL=mongodb://lesson-db:27017/lesson_db
+    depends_on:
+      - lesson-db
+
+  lesson-db:
+    image: mongo:7
+    container_name: lesson-db
+    ports:
+      - "27018:27017"
+    volumes:
+      - lesson_data:/data/db
+
+  # Progress Service (GraphQL + PostgreSQL)
+  progress:
+    build: ./services/progress
+    environment:
+      - DATABASE_URL=postgresql://${ProgressService__Database__Username}:${ProgressService__Database__Password}@progress-db:5434/progress_db
+    depends_on:
+      - progress-db
+
+  progress-db:
+    image: postgres:16
+    container_name: progress-db
+    environment:
+      POSTGRES_DB: progress_db
+      POSTGRES_USER: ${ProgressService__Database__Username}
+      POSTGRES_PASSWORD: ${ProgressService__Database__Password}
+    ports:
+      - "5434:5432"
+    volumes:
+      - progress_data:/var/lib/postgresql/data
+
+  # Billing Service (REST + .NET + PostgreSQL)
+  billing:
+    build: ./services/billing
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=billing-db;Database=billing_db;Username=${BillingService__Database__Username};Password=${BillingService__Database__Password};Port=5435;
+    depends_on:
+      - billing-db
+    ports:
+      - "5001:80"
+
+  billing-db:
+    image: postgres:16
+    container_name: billing-db
+    environment:
+      POSTGRES_DB: billing_db
+      POSTGRES_USER: ${BillingService__Database__Username}
+      POSTGRES_PASSWORD: ${BillingService__Database__Password}
+    ports:
+      - "5435:5432"
+    volumes:
+      - billing_data:/var/lib/postgresql/data
+
+  # Notification Service (REST or Event-Driven + MongoDB)
+  notification:
+    build: ./services/notification
+    environment:
+      - MONGO_URL=mongodb://notification-db:27017/notification_db
+    depends_on:
+      - notification-db
+
+  notification-db:
+    image: mongo:7
+    container_name: notification-db
+    ports:
+      - "27019:27017"
+    volumes:
+      - notification_data:/data/db
+
+  # Optional RabbitMQ for messaging between services
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672" # Web UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+
+volumes:
+  user_data:
+  course_data:
+  lesson_data:
+  progress_data:
+  auth_data:
+  billing_data:
+  notification_data:

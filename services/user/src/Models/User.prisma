@@ -1,0 +1,7 @@
+model User {
+    Id        String   @id
+    FirstName String
+    LastName  String
+    Email     String   @unique
+    UpdatedAt DateTime @updatedAt
+}
