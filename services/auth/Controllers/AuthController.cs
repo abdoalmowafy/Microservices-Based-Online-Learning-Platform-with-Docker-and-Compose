@@ -1,14 +1,17 @@
-using auth.Data;
+﻿using auth.Data;
 using auth.DTOs.Requests;
 using auth.DTOs.Responses;
+using auth.Events;
+using auth.Events.Outgoing;
 using auth.Helpers;
 using auth.Models;
 using auth.Services;
+using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
-using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace auth.Controllers
 {
@@ -19,15 +22,17 @@ namespace auth.Controllers
         private readonly AuthDbContext _context;
         private readonly IJwtService _jwtService;
         private readonly IEmailService _emailService;
+        private readonly IPublishEndpoint _publishEndpoint;
         private const int EmailVerificationTokenLength = 64;
         private const int RefreshTokenLength = 64;
         private const int CanRequestNewTokenAfterMinutes = 5;
         private const int EmailVerificationTokenValidityDays = 7;
-        public AuthController(AuthDbContext context, IJwtService jwtService, IEmailService emailService)
+        public AuthController(AuthDbContext context, IJwtService jwtService, IEmailService emailService, IPublishEndpoint publishEndpoint)
         {
             _context = context;
             _jwtService = jwtService;
             _emailService = emailService;
+            _publishEndpoint = publishEndpoint;
         }
 
         private async Task SendVerificationEmailAsync(AuthUser user)
@@ -57,17 +62,17 @@ namespace auth.Controllers
 
             var user = new AuthUser
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.CreateVersion7(),
                 Email = request.Email.Trim().ToLowerInvariant(),
                 PasswordHash = PasswordHasher.Hash(request.Password),
-                Role = UserRole.Student // Default role, can be changed later
+                Role = UserRole.User // Default role, can be changed later
             };
 
             await _context.AuthUsers.AddAsync(user);
             await SendVerificationEmailAsync(user);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(RegisterAsync), new { email = user.Email }, new { message = "User registered successfully!" });
+            return Created();
         }
 
         [HttpPost("verify-email/request")]
@@ -80,13 +85,13 @@ namespace auth.Controllers
             if (user is null)
                 return NotFound(new { error = "User not found." });
 
-            if(user.EmailIsVerified)
+            if (user.EmailIsVerified)
                 return BadRequest(new { error = "Email is already verified." });
 
             var lastEmailVerficationToken = await _context.AuthEmailVerficationTokens
                 .AsNoTracking()
                 .LastOrDefaultAsync(evt => evt.UserId == user.Id && !evt.IsUsed && DateTime.UtcNow < evt.ExpiresAt);
-                
+
             if (lastEmailVerficationToken is not null)
             {
                 var CanRequestNewTokenAfter = lastEmailVerficationToken.CreatedAt.AddMinutes(CanRequestNewTokenAfterMinutes);
@@ -117,7 +122,7 @@ namespace auth.Controllers
 
             var user = emailVerficationToken.User ??
                 throw new InvalidOperationException("User not found for the provided verification token.");
-            
+
             if (user.EmailIsVerified)
                 return BadRequest(new { error = "Email is already verified." });
 
@@ -125,6 +130,12 @@ namespace auth.Controllers
             user.EmailIsVerified = true;
             _context.AuthUsers.Update(user);
             await _context.SaveChangesAsync();
+
+            await _publishEndpoint.Publish(new UserCreated(
+                user.Id,
+                user.Email,
+                user.CreatedAt
+            ));
 
             return Ok(new { message = "Email verified successfully." });
         }
@@ -135,8 +146,8 @@ namespace auth.Controllers
             var user = await _context.AuthUsers
                 .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Email == request.Email.Trim().ToLowerInvariant());
-            
-            if(user is null || !PasswordHasher.Verify(request.Password, user.PasswordHash))
+
+            if (user is null || !PasswordHasher.Verify(request.Password, user.PasswordHash))
                 return Unauthorized(new { error = "Invalid email or password." });
 
             if (!user.EmailIsVerified)
@@ -152,23 +163,23 @@ namespace auth.Controllers
         {
             if (string.IsNullOrWhiteSpace(refreshToken) || refreshToken.Length < RefreshTokenLength)
                 return BadRequest(new { error = "Invalid refresh token" });
-            
+
             try
             {
                 var response = await _jwtService.RefreshAccessTokenAsync(refreshToken);
                 return Ok(response);
             }
-            catch(InvalidOperationException e)
+            catch (InvalidOperationException e)
             {
                 return Unauthorized(new { error = e.Message });
             }
-        } 
+        }
 
 
         [HttpGet("info"), Authorize]
         public async Task<IActionResult> InfoAsync()
         {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userId = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
             if (!Guid.TryParse(userId, out var userGuid))
                 return Unauthorized(new { error = "Invalid or missing token." });
 
@@ -180,9 +191,7 @@ namespace auth.Controllers
 
             return Ok(new InfoResponse
             {
-                Id = user.Id,
-                Username = user.Email,
-                Role = user.Role,
+                Email = user.Email,
                 CreatedAt = user.CreatedAt
             });
         }

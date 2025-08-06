@@ -42,7 +42,8 @@ namespace auth.Services
                 Audience = audience,
                 Expires = DateTime.UtcNow.AddMinutes(atValdityMinsInt),
                 Subject = new ClaimsIdentity([
-                    new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.CreateVersion7().ToString()),
+                    new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
                     new Claim(ClaimTypes.Role, userRole.ToString())
                 ]),
                 SigningCredentials = new SigningCredentials(
