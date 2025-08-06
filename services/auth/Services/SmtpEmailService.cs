@@ -8,35 +8,35 @@ namespace auth.Services
     {
         private readonly IConfigurationSection _smtpEmailConfig;
         private readonly ILogger _logger;
-        private readonly string _baseUrl = "https://localhost:5001";
+        private readonly string _baseUrl = "localhost:3000";
 
-        public SmtpEmailService(IConfiguration config, ILogger logger)
+        public SmtpEmailService(IConfiguration config, ILogger<SmtpEmailService> logger)
         {
             _smtpEmailConfig = config.GetSection("Email:Smtp") ?? 
                 throw new InvalidOperationException("SMTP configuration is not missing.");
             _logger = logger;
         }
 
-        private (string HOST, string FROM, string PORT, string USERNAME, string PASSWORD) GetSmtpEmailConfig()
+        private (string HOST, int PORT, SecureSocketOptions SSO, string FROM, string? USERNAME, string? PASSWORD) GetSmtpEmailConfig()
         {
             var HOST = _smtpEmailConfig["Host"];
+            var rawPORT = _smtpEmailConfig["Port"];
+            var rawSSO = _smtpEmailConfig["SecureSocketOptions"] ?? "None";
             var FROM = _smtpEmailConfig["From"];
-            var PORT = _smtpEmailConfig["Port"];
             var USERNAME = _smtpEmailConfig["Username"];
             var PASSWORD = _smtpEmailConfig["Password"];
-            if (string.IsNullOrWhiteSpace(HOST) || string.IsNullOrWhiteSpace(FROM) ||
-                string.IsNullOrWhiteSpace(PORT) || string.IsNullOrWhiteSpace(USERNAME) ||
-                string.IsNullOrWhiteSpace(PASSWORD))
+            if (string.IsNullOrWhiteSpace(HOST) || !int.TryParse(rawPORT, out int PORT) 
+                || Enum.TryParse<SecureSocketOptions>(rawSSO, out var SSO) || string.IsNullOrWhiteSpace(FROM))
             {
                 throw new InvalidOperationException("SMTP configuration is not properly set.");
             }
 
-            return new ( HOST, FROM, PORT, USERNAME, PASSWORD );
+            return new ( HOST, PORT, SSO, FROM, USERNAME, PASSWORD );
         }
 
         private async Task SendEmailAsync(string to, string subject, string htmlContent)
         {
-            var (HOST, FROM, PORT, USERNAME, PASSWORD) = GetSmtpEmailConfig();
+            var (HOST, PORT, SSO, FROM, USERNAME, PASSWORD) = GetSmtpEmailConfig();
 
             var message = new MimeMessage();
             message.From.Add(MailboxAddress.Parse(FROM));
@@ -45,8 +45,11 @@ namespace auth.Services
             message.Body = new TextPart(MimeKit.Text.TextFormat.Html) { Text = htmlContent };
 
             using var client = new SmtpClient();
-            await client.ConnectAsync(HOST, int.Parse(PORT), SecureSocketOptions.StartTls);
-            await client.AuthenticateAsync(USERNAME, PASSWORD);
+            await client.ConnectAsync(HOST, PORT, SSO);
+            
+            if(!string.IsNullOrWhiteSpace(USERNAME) && !string.IsNullOrWhiteSpace(PASSWORD))
+                await client.AuthenticateAsync(USERNAME, PASSWORD);
+
             try
             {
                 await client.SendAsync(message);
@@ -61,7 +64,7 @@ namespace auth.Services
         public async Task SendEmailVerificationAsync(string to, string verificationToken)
         {
             var subject = "Email Verification";
-            var verificationUrl = $"{_baseUrl}/verify-email/{verificationToken}";
+            var verificationUrl = $"{_baseUrl}/api/auth/verify-email/verify/{verificationToken}";
             var htmlContent = $@"
                 <h1>Email Verification</h1>
                 <p>Please click the link below to verify your email:</p>

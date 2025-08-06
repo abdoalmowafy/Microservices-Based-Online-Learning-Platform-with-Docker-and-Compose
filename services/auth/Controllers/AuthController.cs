@@ -1,4 +1,4 @@
-﻿using auth.Data;
+using auth.Data;
 using auth.DTOs.Requests;
 using auth.DTOs.Responses;
 using auth.Helpers;
@@ -99,7 +99,7 @@ namespace auth.Controllers
             return Ok(new { message = "Verification mail sent to this email!" });
         }
 
-        [HttpPost("verify-email/verify/{token}")]
+        [HttpGet("verify-email/verify/{token}")]
         public async Task<IActionResult> VerifyEmailAsync([FromRoute] string token)
         {
             if (string.IsNullOrWhiteSpace(token) || token.Length < EmailVerificationTokenLength)
