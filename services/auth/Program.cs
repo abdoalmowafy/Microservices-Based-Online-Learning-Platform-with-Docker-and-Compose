@@ -1,5 +1,7 @@
+using auth.Consumers;
 using auth.Data;
 using auth.Services;
+using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
@@ -50,6 +52,21 @@ builder.Services.AddRateLimiter(options =>
             }));
 
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
+builder.Services.AddMassTransit(config =>
+{
+    config.AddConsumer<UserInfoConsumer>();
+
+    config.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host(new Uri(builder.Configuration["RabbitMQ:Host"]!), h =>
+        {
+            h.Username(builder.Configuration["RabbitMQ:Username"]!);
+            h.Password(builder.Configuration["RabbitMQ:Password"]!);
+        });
+
+        cfg.ConfigureEndpoints(context);
+    });
 });
 var app = builder.Build();
 
