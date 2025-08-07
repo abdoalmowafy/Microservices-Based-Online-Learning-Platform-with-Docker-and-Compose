@@ -1,0 +1,100 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                String    @id // same as auth service user id
+  email             String    @unique
+  firstName         String?
+  lastName          String?
+  dob               DateTime?
+  gender            Gender?
+  avatarUrl         String?
+  prefferedLanguage String    @default("en")
+  createdAt         DateTime //same as auth service user created at
+  updatedAt         DateTime  @updatedAt
+
+  ownedOrgs     Organization[] @relation("OrganizationOwner")
+  moderatedOrgs Organization[] @relation("OrganizationModerators")
+
+  classrooms                        ClassroomUser[]
+  addedCoursesToClassroomsAsTeacher ClassroomCourse[]
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  logoUrl     String?
+  websiteUrl  String?
+  ownerId     String
+  owner       User     @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  classrooms Classroom[]
+  moderators User[]      @relation("OrganizationModerators")
+
+  @@index([id, ownerId])
+  @@index([name])
+}
+
+model Classroom {
+  id             String              @id @default(uuid())
+  name           String
+  description    String?
+  visibility     ClassroomVisibility
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+
+  participants ClassroomUser[]
+
+  teachingCourses ClassroomCourse[]
+}
+
+enum ClassroomVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+model ClassroomUser {
+  classroomId         String
+  classroom           Classroom           @relation(fields: [classroomId], references: [id])
+  userId              String
+  user                User                @relation(fields: [userId], references: [id])
+  joinedAt            DateTime            @default(now())
+  leftAt              DateTime?
+  roleWithinClassroom RoleWithinClassroom
+
+  @@id([classroomId, userId])
+}
+
+enum RoleWithinClassroom {
+  TEACHER
+  ASSISTANT
+  STUDENT
+}
+
+model ClassroomCourse {
+  classroomId      String
+  classroom        Classroom @relation(fields: [classroomId], references: [id])
+  courseId         String // External reference to Course Service
+  addedByTeacherId String
+  addedByTeacher   User      @relation(fields: [addedByTeacherId], references: [id])
+  addedAt          DateTime  @default(now())
+  removedAt        DateTime?
+
+  @@id([classroomId, courseId])
+}
