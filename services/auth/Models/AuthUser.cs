@@ -9,15 +9,15 @@ namespace auth.Models
         [Required, EmailAddress] public required string Email { get; set; }
         [Required] public required string PasswordHash { get; set; }
         [Required] public bool EmailIsVerified { get; set; } = false;
-        [Required] public UserRole Role { get; set; } = UserRole.Student;
+        [Required] public UserRole Role { get; set; } = UserRole.User;
         [Required] public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public enum UserRole
     {
-        Student,
-        Teacher,
-        Admin
+        User,
+        Admin,
+        SuperAdmin
     }
 }
