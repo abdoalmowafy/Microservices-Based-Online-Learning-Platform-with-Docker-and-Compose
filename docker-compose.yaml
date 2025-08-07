@@ -1,4 +1,4 @@
-version: "3.9"
+# version: "3.9"
 
 services:
 
@@ -6,7 +6,7 @@ services:
   gateway:
     build: ./gateway
     ports:
-      - "4000:4000"
+      - "4000:${Gateway_PORT}"
     depends_on:
       - user
       - course
@@ -15,64 +15,129 @@ services:
     environment:
       - NODE_ENV=development
 
+
+  # Mailhog
+  mailhog:
+      image: mailhog/mailhog
+      ports:
+        - "8025:8025" # Web UI
+        - "1025:1025" # SMTP
+      networks:
+        - auth-network
+
+
+  # Message Queue (RabbitMQ)
+  rabbitmq:
+    image: rabbitmq:4.1.2-management
+    ports:
+      - "5672:5672"
+      - "15672:15672" # Web UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
+    networks:
+      - auth-network
+      - upload-network
+      - user-network
+      - course-network
+      - lesson-network
+      - progress-network
+      - billing-network
+      - notification-network
+
+
   # Auth Service (REST + .NET + PostgreSQL)
   auth:
     build: ./services/auth
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Host=auth-db;Database=auth_db;Username=${AuthService__Database__Username};Password=${AuthService__Database__Password};Port=5432;
-      - JwtConfig__Issuer=${JwtConfig__Issuer}
-      - JwtConfig__Audience=${JwtConfig__Audience}
-      - JwtConfig__Key=${JwtConfig__Key}
-      - JwtConfig__AccessTokenValidityMins=${JwtConfig__AccessTokenValidityMins}
-      - JwtConfig__RefreshTokenValidityDays=${JwtConfig__RefreshTokenValidityDays}
-      - Email_Smtp__Host=${Email_Smtp__Host}
-      - Email_Smtp__From=${Email_Smtp__From}
-      - Email_Smtp__Port=${Email_Smtp__Port}
-      - Email_Smtp__Username=${Email_Smtp__Username}
-      - Email_Smtp__Password=${Email_Smtp__Password}
+      - ConnectionStrings:DefaultConnection=Host=auth-db;Port=5432;Database=auth_db;Username=${AuthService_Database_Username};Password=${AuthService_Database_Password};
+      - JwtConfig:Issuer=${JwtConfig_Issuer}
+      - JwtConfig:Audience=${JwtConfig_Audience}
+      - JwtConfig:Key=${JwtConfig_Key}
+      - JwtConfig:AccessTokenValidityMins=${JwtConfig_AccessTokenValidityMins}
+      - JwtConfig:RefreshTokenValidityDays=${JwtConfig_RefreshTokenValidityDays}
+      - Email:Smtp:Host=${Email_Smtp_Host}
+      - Email:Smtp:From=${Email_Smtp_From}
+      - Email:Smtp:Port=${Email_Smtp_Port}
+      - Email:Smtp:Username=${Email_Smtp_Username}
+      - Email:Smtp:Password=${Email_Smtp_Password}
+      - RabbitMQ:Host=rabbitmq://rabbitmq:5672
+      - RabbitMQ:Username=${RABBITMQ_DEFAULT_USER}
+      - RabbitMQ:Password=${RABBITMQ_DEFAULT_PASS}
     depends_on:
       - auth-db
+      - rabbitmq
     ports:
-      - "5000:80"
+      - "3000:8080" # HTTP
+      - "3001:8081" # HTTPS
+    networks:
+      - auth-network
 
   auth-db:
-    image: postgres:16
+    image: postgres:17.5
     container_name: auth-db
     environment:
       POSTGRES_DB: auth_db
-      POSTGRES_USER: ${AuthService__Database__Username}
-      POSTGRES_PASSWORD: ${AuthService__Database__Password}
+      POSTGRES_USER: ${AuthService_Database_Username}
+      POSTGRES_PASSWORD: ${AuthService_Database_Password}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - auth_data:/var/lib/postgresql/data
+    networks:
+      - auth-network
 
-  # User Profile Service (GraphQL + PostgreSQL)
+
+  # Upload Service (NestJS + Firebase Storage)
+  upload:
+    build: ./services/upload
+    environment:
+      - NODE_ENV=development
+      - FIREBASE_STORAGE_BUCKET=${UploadService_Firebase_Storage_Bucket}
+      - FIREBASE_STORAGE_KEY=${UploadService_Firebase_Storage_Key}
+    depends_on:
+      - rabbitmq
+    ports:
+      - "5002:${UploadService_PORT}"
+    networks:
+      - upload-network
+
+
+  # User Profile Service (NestJS + GraphQL + PostgreSQL)
   user:
     build: ./services/user
     environment:
       - NODE_ENV=development
-      - DATABASE_URL=postgresql://${UserService__Database__Username}:${UserService__Database__Password}@user-db:5433/user_db
-      - JwtConfig__Key=${JwtConfig__Key}
-      - JwtConfig__Issuer=${JwtConfig__Issuer}
-      - JwtConfig__Audience=${JwtConfig__Audience}
-      - JwtConfig__AccessTokenValidityMins=${JwtConfig__AccessTokenValidityMins}
-      - JwtConfig__RefreshTokenValidityDays=${JwtConfig__RefreshTokenValidityDays}
+      - DATABASE_URL=postgresql://${UserService_Database_Username}:${UserService_Database_Password}@user-db:5432/user_db
+      - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
+      - JwtConfig_Key=${JwtConfig_Key}
+      - JwtConfig_Issuer=${JwtConfig_Issuer}
+      - JwtConfig_Audience=${JwtConfig_Audience}
+      - JwtConfig_AccessTokenValidityMins=${JwtConfig_AccessTokenValidityMins}
+      - JwtConfig_RefreshTokenValidityDays=${JwtConfig_RefreshTokenValidityDays}
     depends_on:
       - user-db
+      - rabbitmq
+    ports:
+      - "5003:${UserService_PORT}"
+    networks:
+      - user-network
 
   user-db:
-    image: postgres:16
+    image: postgres:17.5
     container_name: user-db
     environment:
       POSTGRES_DB: user_db
-      POSTGRES_USER: ${UserService__Database__Username}
-      POSTGRES_PASSWORD: ${UserService__Database__Password}
+      POSTGRES_USER: ${UserService_Database_Username}
+      POSTGRES_PASSWORD: ${UserService_Database_Password}
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
       - user_data:/var/lib/postgresql/data
+    networks:
+      - user-network
+
 
   # Course Service (GraphQL + MongoDB)
   course:
@@ -81,14 +146,21 @@ services:
       - MONGO_URL=mongodb://course-db:27017/course_db
     depends_on:
       - course-db
+    ports:
+      - "5004:${CourseService_PORT}"
+    networks:
+      - course-network
 
   course-db:
-    image: mongo:7
+    image: mongo:8
     container_name: course-db
     ports:
       - "27017:27017"
     volumes:
       - course_data:/data/db
+    networks:
+      - course-network
+
 
   # Lesson Service (GraphQL + MongoDB)
   lesson:
@@ -97,57 +169,77 @@ services:
       - MONGO_URL=mongodb://lesson-db:27017/lesson_db
     depends_on:
       - lesson-db
+    ports:
+      - "5005:${LessonService_PORT}"
+    networks:
+      - lesson-network
 
   lesson-db:
-    image: mongo:7
+    image: mongo:8
     container_name: lesson-db
     ports:
       - "27018:27017"
     volumes:
       - lesson_data:/data/db
+    networks:
+      - lesson-network
 
-  # Progress Service (GraphQL + PostgreSQL)
+
+  # Progress Service (NestJS + GraphQL + PostgreSQL)
   progress:
     build: ./services/progress
     environment:
-      - DATABASE_URL=postgresql://${ProgressService__Database__Username}:${ProgressService__Database__Password}@progress-db:5434/progress_db
+      - DATABASE_URL=postgresql://${ProgressService_Database_Username}:${ProgressService_Database_Password}@progress-db:5432/progress_db
     depends_on:
       - progress-db
+    ports:
+      - "5006:${ProgressService_PORT}"
+    networks:
+      - progress-network
 
   progress-db:
-    image: postgres:16
+    image: postgres:17.5
     container_name: progress-db
     environment:
       POSTGRES_DB: progress_db
-      POSTGRES_USER: ${ProgressService__Database__Username}
-      POSTGRES_PASSWORD: ${ProgressService__Database__Password}
+      POSTGRES_USER: ${ProgressService_Database_Username}
+      POSTGRES_PASSWORD: ${ProgressService_Database_Password}
     ports:
-      - "5434:5432"
+      - "5435:5432"
     volumes:
       - progress_data:/var/lib/postgresql/data
+    networks:
+      - progress-network
+
 
   # Billing Service (REST + .NET + PostgreSQL)
   billing:
     build: ./services/billing
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Host=billing-db;Database=billing_db;Username=${BillingService__Database__Username};Password=${BillingService__Database__Password};Port=5435;
+      - ConnectionStrings:DefaultConnection=Host=billing-db;Port=5432;Database=billing_db;Username=${BillingService_Database_Username};Password=${BillingService_Database_Password};
     depends_on:
       - billing-db
     ports:
-      - "5001:80"
+      - "5007:8080"
+      - "5008:8081"
+    networks:
+      - billing-network
 
   billing-db:
-    image: postgres:16
+    image: postgres:17.5
     container_name: billing-db
     environment:
       POSTGRES_DB: billing_db
-      POSTGRES_USER: ${BillingService__Database__Username}
-      POSTGRES_PASSWORD: ${BillingService__Database__Password}
+      POSTGRES_USER: ${BillingService_Database_Username}
+      POSTGRES_PASSWORD: ${BillingService_Database_Password}
     ports:
-      - "5435:5432"
+      - "5436:5432"
     volumes:
       - billing_data:/var/lib/postgresql/data
+    networks:
+      - billing-network
+
 
   # Notification Service (REST or Event-Driven + MongoDB)
   notification:
@@ -156,30 +248,37 @@ services:
       - MONGO_URL=mongodb://notification-db:27017/notification_db
     depends_on:
       - notification-db
+    ports:
+      - "5009:${NotificationService_PORT}"
+    networks:
+      - notification-network
 
   notification-db:
-    image: mongo:7
+    image: mongo:8
     container_name: notification-db
     ports:
       - "27019:27017"
     volumes:
       - notification_data:/data/db
+    networks:
+      - notification-network
 
-  # Optional RabbitMQ for messaging between services
-  rabbitmq:
-    image: rabbitmq:3-management
-    ports:
-      - "5672:5672"
-      - "15672:15672" # Web UI
-    environment:
-      - RABBITMQ_DEFAULT_USER=guest
-      - RABBITMQ_DEFAULT_PASS=guest
 
 volumes:
+  auth_data:
   user_data:
   course_data:
   lesson_data:
   progress_data:
-  auth_data:
   billing_data:
   notification_data:
+
+networks:
+  auth-network:
+  upload-network:
+  user-network:
+  course-network:
+  lesson-network:
+  progress-network:
+  billing-network:
+  notification-network:
