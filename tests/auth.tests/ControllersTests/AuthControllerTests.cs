@@ -8,6 +8,7 @@ using auth.Services;
 using FakeItEasy;
 using FluentAssertions;
 using FluentAssertions.Primitives;
+using MassTransit;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,6 +20,7 @@ namespace auth.tests.ControllersTests
         private readonly AuthDbContext _context;
         private readonly IJwtService _jwtService;
         private readonly IEmailService _emailService;
+        private readonly IPublishEndpoint _publishEndpoint;
         // SUT (System Under Test)
         private readonly AuthController _authController;
 
@@ -39,9 +41,10 @@ namespace auth.tests.ControllersTests
              );
 
             _emailService = A.Fake<IEmailService>();
+            _publishEndpoint = A.Fake<IPublishEndpoint>();
 
             // SUT
-            _authController = new AuthController(_context, _jwtService, _emailService);
+            _authController = new AuthController(_context, _jwtService, _emailService, _publishEndpoint);
         }
 
         [Fact]
@@ -208,7 +211,7 @@ namespace auth.tests.ControllersTests
             // Arrange
             var user = new AuthUser
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.CreateVersion7(),
                 Email = "testuser@test.com",
                 PasswordHash = PasswordHasher.Hash("Test@123"),
             };
@@ -240,7 +243,7 @@ namespace auth.tests.ControllersTests
             var authEmailVerificationToken = new AuthEmailVerficationToken
             {
                 EmailVerficationToken = RandomBytesGeneratorHelper.GenerateRandomBytes(64),
-                UserId = Guid.NewGuid(),
+                UserId = Guid.CreateVersion7(),
                 ExpiresAt = DateTime.UtcNow.AddDays(7)
             };
             await _context.AuthEmailVerficationTokens.AddAsync(authEmailVerificationToken);
@@ -260,7 +263,7 @@ namespace auth.tests.ControllersTests
             // Arrange
             var user = new AuthUser
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.CreateVersion7(),
                 Email = "testuser",
                 PasswordHash = PasswordHasher.Hash("Test@123"),
                 EmailIsVerified = true
@@ -291,7 +294,7 @@ namespace auth.tests.ControllersTests
             // Arrange
             var user = new AuthUser
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.CreateVersion7(),
                 Email = "testuser",
                 PasswordHash = PasswordHasher.Hash("Test@123"),
             };

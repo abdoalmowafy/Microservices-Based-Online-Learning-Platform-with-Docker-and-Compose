@@ -28,13 +28,13 @@ namespace auth.tests.ServicesTests
 
 
         [Theory]
-        [InlineData(UserRole.Student)]
-        [InlineData(UserRole.Teacher)]
+        [InlineData(UserRole.User)]
         [InlineData(UserRole.Admin)]
+        [InlineData(UserRole.SuperAdmin)]
         public void JwtService_GenerateAccessToken_ReturnsString(UserRole userRole)
         {
             // Arrange
-            var userId = Guid.NewGuid();
+            var userId = Guid.CreateVersion7();
             var handler = new JwtSecurityTokenHandler();
             var config = TestHelpers.GetTestConfiguration();
 
@@ -44,7 +44,7 @@ namespace auth.tests.ServicesTests
 
             // Assert
             token.Should().NotBeNullOrWhiteSpace();
-            jwt.Claims.Should().ContainSingle(c => c.Type == JwtRegisteredClaimNames.NameId && c.Value == userId.ToString());
+            jwt.Claims.Should().ContainSingle(c => c.Type == JwtRegisteredClaimNames.Sub && c.Value == userId.ToString());
             jwt.Claims.Should().ContainSingle(c => c.Type == "role" && c.Value == userRole.ToString());
             jwt.Claims.Should().ContainSingle(c => c.Type == JwtRegisteredClaimNames.Iss && c.Value == config["JwtConfig:Issuer"]);
             jwt.Claims.Should().ContainSingle(c => c.Type == JwtRegisteredClaimNames.Aud && c.Value == config["JwtConfig:Audience"]);
@@ -56,7 +56,7 @@ namespace auth.tests.ServicesTests
         public async Task JwtService_GenerateRefreshToken_ReturnsString()
         {
             // Arrange
-            var userId = Guid.NewGuid();
+            var userId = Guid.CreateVersion7();
 
             // Act
             var token = await _jwtService.GenerateRefreshTokenAsync(userId);
@@ -69,8 +69,8 @@ namespace auth.tests.ServicesTests
         public async Task JwtService_GenerateTokensAsync_ReturnsObject()
         {
             // Arrange
-            var userId = Guid.NewGuid();
-            var role = UserRole.Student;
+            var userId = Guid.CreateVersion7();
+            var role = UserRole.User;
 
             // Act
             var result = await _jwtService.GenerateTokensAsync(userId, role);
@@ -88,10 +88,10 @@ namespace auth.tests.ServicesTests
             // Arrange
             var user = new AuthUser
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.CreateVersion7(),
                 Email = "testuser",
                 PasswordHash = "hashedpassword",
-                Role = UserRole.Student
+                Role = UserRole.User
             };
             await _context.AuthUsers.AddAsync(user);
             await _context.SaveChangesAsync();

@@ -9,7 +9,7 @@ namespace auth.tests
     {
         public static DbContextOptions<AuthDbContext> CreateTestDbOptions() =>
             new DbContextOptionsBuilder<AuthDbContext>()
-                .UseInMemoryDatabase($"TestDb_{Guid.NewGuid()}")
+                .UseInMemoryDatabase($"TestDb_{Guid.CreateVersion7()}")
                 .Options;
 
         public static IConfiguration GetTestConfiguration() =>
