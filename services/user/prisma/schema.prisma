@@ -17,7 +17,7 @@ model User {
   avatarUrl         String?
   prefferedLanguage String    @default("en")
   createdAt         DateTime //same as auth service user created at
-  updatedAt         DateTime  @updatedAt
+  updatedAt         DateTime? @updatedAt
 
   ownedOrgs     Organization[] @relation("OrganizationOwner")
   moderatedOrgs Organization[] @relation("OrganizationModerators")
